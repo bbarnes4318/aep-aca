@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Find Your Health Plan - LevelQuote</title>
+    <meta name="description" content="Get an instant estimate on your health insurance subsidy. Find affordable plans with LevelQuote.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- TrustedForm Script -->
+    <script type="text/javascript">
+        (function() {
+            var tf = document.createElement('script');
+            tf.type = 'text/javascript'; tf.async = true;
+            tf.src = 'https://cert.trustedform.com/trustedform.js';
+            var s = document.getElementsByTagName('script')[0];
+            s.parentNode.insertBefore(tf, s);
+        })();
+    </script>
+
+    <script>
+        // Global variables for the calculator
+        const subsidyData = {
+            zipCode: '',
+            income: 35000,
+            householdSize: 0,
+            ages: []
+        };
+
+        // Utility functions that need to be globally accessible
+        function updateCountdown() {
+            const deadline = new Date('2025-01-15T23:59:59');
+            const now = new Date();
+            const diff = deadline - now;
+            
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            
+            document.getElementById('days').textContent = days + 'd';
+            document.getElementById('hours').textContent = hours + 'h';
+            document.getElementById('minutes').textContent = minutes + 'm';
+        }
+
+        function showAlert(message) {
+            const modal = document.getElementById('alertModal');
+            document.getElementById('alertMessage').textContent = message;
+            modal.classList.remove('hidden', 'opacity-0');
+            modal.classList.add('flex', 'opacity-100');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeModal(id) {
+            const modal = document.getElementById(id);
+            modal.classList.remove('flex', 'opacity-100');
+            modal.classList.add('hidden', 'opacity-0');
+            document.body.style.overflow = 'auto';
+        }
+        
+        function calculateFPL(householdSize) {
+            const baseFPL = 15060;
+            const additionalPerson = 5380;
+            return baseFPL + (additionalPerson * (householdSize - 1));
+        }
+
+        function generateAgeInputs(size) {
+            let html = '<label class="block text-sm font-medium text-gray-700 mb-2">Ages of people needing coverage</label>';
+            html += '<div class="grid grid-cols-2 gap-4">';
+            for (let i = 0; i < Math.min(size, 4); i++) {
+                const labels = ['Your age', 'Spouse age', 'Child 1 age', 'Child 2 age'];
+                html += `<input type="number" class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:outline-none focus:border-blue-500 transition age-input" placeholder="${labels[i]}" min="0" max="120" data-index="${i}">`;
+            }
+            if (size > 4) {
+                html += `<input type="number" class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 bg-gray-100 cursor-not-allowed" placeholder="${size - 4} more..." disabled>`;
+            }
+            html += '</div>';
+            return html;
+        }
+
+        // Wait for the window to load before attaching event listeners
+        window.onload = function() {
+            // Initialize countdown timer
+            updateCountdown();
+            setInterval(updateCountdown, 60000);
+
+            // Income Slider
+            const incomeSlider = document.getElementById('incomeSlider');
+            const incomeValue = document.getElementById('incomeValue');
+            incomeSlider.addEventListener('input', function() {
+                subsidyData.income = parseInt(this.value);
+                incomeValue.textContent = this.value.toLocaleString();
+            });
+
+            // Household Size Selection
+            const householdOptions = document.querySelectorAll('.household-option');
+            householdOptions.forEach(option => {
+                option.addEventListener('click', function() {
+                    householdOptions.forEach(opt => {
+                        opt.classList.remove('bg-blue-600', 'text-white', 'hover:bg-blue-700', 'border-blue-600');
+                        opt.classList.add('bg-white', 'text-gray-700', 'hover:bg-gray-50', 'border-gray-200');
+                    });
+                    this.classList.remove('bg-white', 'text-gray-700', 'hover:bg-gray-50', 'border-gray-200');
+                    this.classList.add('bg-blue-600', 'text-white', 'hover:bg-blue-700', 'border-blue-600');
+                    subsidyData.householdSize = parseInt(this.dataset.size);
+                    
+                    const ageInputsDiv = document.getElementById('ageInputs');
+                    if (subsidyData.householdSize > 1) {
+                        ageInputsDiv.style.display = 'block';
+                        ageInputsDiv.innerHTML = generateAgeInputs(subsidyData.householdSize);
+                    } else {
+                        ageInputsDiv.style.display = 'none';
+                        subsidyData.ages = [35];
+                    }
+                });
+            });
+
+            // ZIP Code Validation
+            const zipCodeInput = document.getElementById('zipCode');
+            zipCodeInput.addEventListener('input', function() {
+                this.value = this.value.replace(/\D/g, '');
+                subsidyData.zipCode = this.value;
+            });
+
+            // SEP Checker
+            const lifeEvents = document.querySelectorAll('.life-event input');
+            const sepQualified = document.getElementById('sepQualified');
+            lifeEvents.forEach(checkbox => {
+                checkbox.addEventListener('change', function() {
+                    const anyChecked = Array.from(lifeEvents).some(cb => cb.checked);
+                    if (anyChecked) {
+                        sepQualified.classList.remove('hidden');
+                    } else {
+                        sepQualified.classList.add('hidden');
+                    }
+                });
+            });
+
+            // Calculator Form Submission
+            const calculatorForm = document.getElementById('subsidyCalculator');
+            calculatorForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                if (!subsidyData.zipCode || subsidyData.zipCode.length !== 5) {
+                    showAlert('Please enter a valid 5-digit ZIP code.');
+                    return;
+                }
+                if (subsidyData.householdSize === 0) {
+                    showAlert('Please select your household size.');
+                    return;
+                }
+                
+                if (subsidyData.householdSize > 1) {
+                    const ageInputs = document.querySelectorAll('.age-input');
+                    subsidyData.ages = Array.from(ageInputs).map(input => parseInt(input.value) || 35);
+                }
+                
+                document.getElementById('calculatingOverlay').classList.remove('opacity-0', 'pointer-events-none');
+                document.getElementById('calculatingOverlay').classList.add('opacity-100');
+                
+                setTimeout(() => {
+                    const federalPovertyLevel = calculateFPL(subsidyData.householdSize);
+                    const incomePercentFPL = (subsidyData.income / federalPovertyLevel) * 100;
+                    
+                    let subsidyAmount = 0;
+                    if (incomePercentFPL <= 150) {
+                        subsidyAmount = 550;
+                    } else if (incomePercentFPL <= 200) {
+                        subsidyAmount = 450;
+                    } else if (incomePercentFPL <= 250) {
+                        subsidyAmount = 350;
+                    } else if (incomePercentFPL <= 400) {
+                        subsidyAmount = 250;
+                    }
+                    
+                    subsidyAmount = subsidyAmount * (1 + (subsidyData.householdSize - 1) * 0.3);
+                    
+                    document.getElementById('subsidyAmount').textContent = Math.round(subsidyAmount);
+                    
+                    document.getElementById('calculatingOverlay').classList.remove('opacity-100');
+                    document.getElementById('calculatingOverlay').classList.add('opacity-0', 'pointer-events-none');
+                    
+                    document.getElementById('resultsOverlay').classList.remove('opacity-0', 'pointer-events-none');
+                    document.getElementById('resultsOverlay').classList.add('opacity-100');
+                    document.body.style.overflow = 'hidden';
+                }, 2000);
+            });
+
+            const leadForm = document.getElementById('leadCaptureForm');
+            leadForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const trustedFormCertUrl = document.getElementById('xxTrustedFormCertUrl').value;
+
+                const formData = {
+                    firstName: document.getElementById('firstName').value,
+                    lastName: document.getElementById('lastName').value,
+                    phone: document.getElementById('phone').value,
+                    email: document.getElementById('email').value,
+                    consentGiven: document.getElementById('tcpaConsent').checked,
+                    xxTrustedFormCertUrl: trustedFormCertUrl,
+                    timestamp: new Date().toISOString(),
+                    campaign: 'aca_health',
+                    estimatedSubsidy: document.getElementById('subsidyAmount').textContent,
+                    zipCode: subsidyData.zipCode,
+                    income: subsidyData.income,
+                    householdSize: subsidyData.householdSize,
+                    ages: subsidyData.ages.join(',')
+                };
+
+                console.log('Form data submitted:', formData);
+
+                // Send data to the Digital Ocean server endpoint
+                try {
+                    const response = await fetch(window.location.origin + '/submit-lead', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(formData)
+                    });
+                    
+                    if (response.ok) {
+                        showAlert('Thank you! Your information has been submitted successfully. A licensed agent will contact you shortly to help you enroll in the best plan for your needs.');
+                    } else {
+                        showAlert('There was an error processing your request. Please call 1-800-XXX-XXXX');
+                    }
+
+                } catch (error) {
+                    console.error('Error sending data to the server:', error);
+                    showAlert('There was an error processing your request. Please call 1-800-XXX-XXXX');
+                }
+            });
+
+            const phoneInput = document.getElementById('phone');
+            phoneInput.addEventListener('input', function(e) {
+                let value = e.target.value.replace(/\D/g, '');
+                if (value.length > 0) {
+                    if (value.length <= 3) {
+                        value = `(${value}`;
+                    } else if (value.length <= 6) {
+                        value = `(${value.slice(0, 3)}) ${value.slice(3)}`;
+                    } else {
+                        value = `(${value.slice(0, 3)}) ${value.slice(3, 6)}-${value.slice(6, 10)}`;
+                    }
+                }
+                e.target.value = value;
+            });
+
+            let exitIntentShown = false;
+            document.addEventListener('mouseout', function(e) {
+                if (e.clientY <= 0 && !exitIntentShown) {
+                    exitIntentShown = true;
+                    // Could show a modal here
+                }
+            });
+        };
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #1f2937;
+        }
+
+        /* Custom Styles for Subtle Effects */
+        .card-glow {
+            transition: box-shadow 0.3s ease-in-out;
+        }
+        .card-glow:hover {
+            box-shadow: 0 10px 25px rgba(37, 99, 235, 0.2);
+        }
+        .bg-gradient-hero {
+            background-image: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%);
+        }
+        .hover-lift:hover {
+            transform: translateY(-2px);
+        }
+        .custom-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 24px;
+            height: 24px;
+            background: #fff;
+            border: 3px solid #2563eb;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            margin-top: -8px;
+        }
+        .custom-slider::-moz-range-thumb {
+            width: 24px;
+            height: 24px;
+            background: #fff;
+            border: 3px solid #2563eb;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        /* Style for the overlay backdrop */
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.7);
+            transition: opacity 0.3s ease;
+        }
+        /* Style for the modal itself */
+        .modal-content {
+            transform: scale(0.95);
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        .modal.is-open .modal-content {
+            transform: scale(1);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 antialiased">
+
+    <!-- Google Tag Manager (noscript) -->
+    <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-XXXX"
+    height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+    
+    <!-- Modal for Alerts -->
+    <div id="alertModal" class="fixed inset-0 z-[9999] hidden items-center justify-center p-4 modal-backdrop opacity-0 transition-opacity duration-300">
+        <div class="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full relative modal-content opacity-0 transition-transform duration-300">
+            <h3 class="text-xl font-bold mb-3 text-red-600">Attention</h3>
+            <p id="alertMessage" class="text-gray-700"></p>
+            <button onclick="closeModal('alertModal')" class="mt-5 w-full bg-blue-600 text-white font-semibold py-2 rounded-lg hover:bg-blue-700 transition">
+                OK
+            </button>
+        </div>
+    </div>
+
+    <!-- Urgency Bar -->
+    <div class="bg-red-600 text-white font-semibold text-center py-2 text-sm md:text-base sticky top-0 z-50">
+        <div class="flex items-center justify-center space-x-2">
+            <span>⚠️ Open Enrollment Ends in</span>
+            <div class="flex space-x-1 font-mono text-xs md:text-sm">
+                <span class="bg-red-700 px-2 py-1 rounded-md" id="days">45d</span>
+                <span class="bg-red-700 px-2 py-1 rounded-md" id="hours">12h</span>
+                <span class="bg-red-700 px-2 py-1 rounded-md" id="minutes">34m</span>
+            </div>
+            <span class="hidden md:inline">- Don't Lose Your 2025 Coverage!</span>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm sticky top-10 md:top-[42px] z-40">
+        <div class="container mx-auto px-4 py-3 flex items-center justify-between">
+            <img src="https://placehold.co/150x40/d1d5db/4b5563?text=LevelQuote" alt="LevelQuote" class="h-8 md:h-10">
+            <a href="tel:18005551234" class="inline-flex items-center space-x-2 bg-green-500 text-white font-medium py-2 px-4 rounded-full text-sm hover:bg-green-600 transition hover-lift">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.774a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.142 18 3 13.858 3 8V5a1 1 0 011-1h2.153z"/>
+                </svg>
+                <span class="hidden md:inline">1-800-XXX-XXXX</span>
+            </a>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="bg-gradient-hero text-white py-12 md:py-20 min-h-[calc(100vh-100px)] flex items-center">
+        <div class="container mx-auto px-4">
+            <div class="grid lg:grid-cols-2 gap-12 items-start">
+                <!-- Left Content -->
+                <div class="lg:pt-16">
+                    <h1 class="text-3xl md:text-5xl lg:text-6xl font-extrabold leading-tight mb-4 drop-shadow-sm">
+                        See How Much You'll Save on 2025 Health Insurance
+                    </h1>
+                    <h2 class="text-lg md:text-xl lg:text-2xl font-medium mb-8 text-blue-100">
+                        4 in 5 Americans Qualify for Subsidies - Check in 60 Seconds
+                    </h2>
+                    
+                    <div class="flex flex-wrap gap-x-12 gap-y-6 mb-10">
+                        <div class="text-center md:text-left">
+                            <span class="text-4xl md:text-5xl font-extrabold block drop-shadow-sm">$500</span>
+                            <span class="text-sm md:text-base text-blue-200">Average Monthly Savings</span>
+                        </div>
+                        <div class="text-center md:text-left">
+                            <span class="text-4xl md:text-5xl font-extrabold block drop-shadow-sm">$0</span>
+                            <span class="text-sm md:text-base text-blue-200">Plans Available</span>
+                        </div>
+                        <div class="text-center md:text-left">
+                            <span class="text-4xl md:text-5xl font-extrabold block drop-shadow-sm">47</span>
+                            <span class="text-sm md:text-base text-blue-200">States Covered</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Benefits list -->
+                    <div class="bg-white/10 backdrop-blur-sm p-6 rounded-xl shadow-lg border border-white/20">
+                        <ul class="space-y-4">
+                            <li class="flex items-center space-x-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white bg-blue-500/50 rounded-full p-1 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                </svg>
+                                <span class="text-lg font-medium">No medical questions</span>
+                            </li>
+                            <li class="flex items-center space-x-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white bg-blue-500/50 rounded-full p-1 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                </svg>
+                                <span class="text-lg font-medium">Pre-existing conditions covered</span>
+                            </li>
+                            <li class="flex items-center space-x-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white bg-blue-500/50 rounded-full p-1 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                </svg>
+                                <span class="text-lg font-medium">Free preventive care</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <!-- Subsidy Calculator Card -->
+                <div class="bg-white rounded-2xl shadow-xl p-6 md:p-8 lg:p-10 card-glow w-full lg:max-w-lg lg:justify-self-end">
+                    <div class="text-center mb-6">
+                        <span class="inline-block bg-green-500 text-white text-xs font-semibold px-3 py-1 rounded-full mb-3">AI-Powered Instant Results</span>
+                        <h3 class="text-2xl md:text-3xl font-bold text-gray-800">Calculate Your Subsidy</h3>
+                        <p class="text-sm text-gray-500 mt-2">
+                            No personal information required for estimate
+                        </p>
+                    </div>
+                    
+                    <form class="space-y-6" id="subsidyCalculator">
+                        <!-- ZIP Code -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">ZIP Code</label>
+                            <input type="text" id="zipCode" placeholder="Enter ZIP code" maxlength="5" required
+                                class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:outline-none focus:border-blue-500 transition">
+                            <small class="block mt-1 text-xs text-gray-500">We need this to show available plans in your area</small>
+                        </div>
+                        
+                        <!-- Annual Income -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Estimated Annual Household Income</label>
+                            <div class="text-3xl font-bold text-blue-600 mb-2 text-center">$<span id="incomeValue">35,000</span></div>
+                            <input type="range" id="incomeSlider" min="15000" max="150000" value="35000" step="1000" class="w-full custom-slider">
+                            <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>$15,000</span>
+                                <span>$150,000</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Household Size -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">How many people need coverage?</label>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <button type="button" class="household-option p-4 rounded-lg border-2 border-gray-200 text-center transition hover:bg-gray-50 hover:border-blue-500" data-size="1">
+                                    <span class="font-semibold text-lg block">1</span>
+                                    <span class="text-xs text-gray-500">Just me</span>
+                                </button>
+                                <button type="button" class="household-option p-4 rounded-lg border-2 border-gray-200 text-center transition hover:bg-gray-50 hover:border-blue-500" data-size="2">
+                                    <span class="font-semibold text-lg block">2</span>
+                                    <span class="text-xs text-gray-500">2 people</span>
+                                </button>
+                                <button type="button" class="household-option p-4 rounded-lg border-2 border-gray-200 text-center transition hover:bg-gray-50 hover:border-blue-500" data-size="3">
+                                    <span class="font-semibold text-lg block">3</span>
+                                    <span class="text-xs text-gray-500">3 people</span>
+                                </button>
+                                <button type="button" class="household-option p-4 rounded-lg border-2 border-gray-200 text-center transition hover:bg-gray-50 hover:border-blue-500" data-size="4">
+                                    <span class="font-semibold text-lg block">4+</span>
+                                    <span class="text-xs text-gray-500">Family</span>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Dynamic Age Inputs -->
+                        <div id="ageInputs" style="display: none;" class="space-y-4"></div>
+                        
+                        <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg text-lg hover:bg-blue-700 transition hover-lift">
+                            Calculate My Savings
+                            <span class="ml-2">→</span>
+                        </button>
+                    </form>
+                    
+                    <!-- Calculating Overlay -->
+                    <div id="calculatingOverlay" class="absolute inset-0 bg-white/95 rounded-2xl flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
+                        <div class="text-center">
+                            <svg class="w-16 h-16 mx-auto mb-4 animate-spin text-blue-500" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <p class="text-lg font-medium text-gray-700">Analyzing Your Eligibility...</p>
+                            <p class="text-sm text-gray-500">Checking 10+ insurance carriers</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <!-- SEP Checker Section -->
+    <section class="container mx-auto px-4 py-12">
+        <div class="bg-yellow-50 border-2 border-yellow-400 rounded-xl p-6 shadow-md md:p-8">
+            <div class="flex items-start space-x-4 mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-yellow-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                </svg>
+                <div>
+                    <h3 class="text-xl font-bold text-gray-800">Outside Open Enrollment?</h3>
+                    <p class="text-sm text-gray-600">
+                        You may still qualify through a Special Enrollment Period (SEP).
+                    </p>
+                </div>
+            </div>
+            
+            <p class="text-base text-gray-700 mb-5">Check if any of these apply to you:</p>
+            
+            <div class="grid md:grid-cols-2 gap-4">
+                <label class="life-event flex items-center space-x-3 p-3 rounded-lg border-2 border-transparent transition hover:bg-yellow-100/50 hover:border-yellow-400">
+                    <input type="checkbox" value="job_loss" class="rounded text-blue-600 border-gray-300 focus:ring-blue-500">
+                    <span class="text-gray-700">Lost job-based coverage</span>
+                </label>
+                <label class="life-event flex items-center space-x-3 p-3 rounded-lg border-2 border-transparent transition hover:bg-yellow-100/50 hover:border-yellow-400">
+                    <input type="checkbox" value="moved" class="rounded text-blue-600 border-gray-300 focus:ring-blue-500">
+                    <span class="text-gray-700">Moved to a new state/ZIP</span>
+                </label>
+                <label class="life-event flex items-center space-x-3 p-3 rounded-lg border-2 border-transparent transition hover:bg-yellow-100/50 hover:border-yellow-400">
+                    <input type="checkbox" value="married" class="rounded text-blue-600 border-gray-300 focus:ring-blue-500">
+                    <span class="text-gray-700">Got married</span>
+                </label>
+                <label class="life-event flex items-center space-x-3 p-3 rounded-lg border-2 border-transparent transition hover:bg-yellow-100/50 hover:border-yellow-400">
+                    <input type="checkbox" value="divorced" class="rounded text-blue-600 border-gray-300 focus:ring-blue-500">
+                    <span class="text-gray-700">Got divorced</span>
+                </label>
+                <label class="life-event flex items-center space-x-3 p-3 rounded-lg border-2 border-transparent transition hover:bg-yellow-100/50 hover:border-yellow-400">
+                    <input type="checkbox" value="baby" class="rounded text-blue-600 border-gray-300 focus:ring-blue-500">
+                    <span class="text-gray-700">Had a baby/adopted</span>
+                </label>
+                <label class="life-event flex items-center space-x-3 p-3 rounded-lg border-2 border-transparent transition hover:bg-yellow-100/50 hover:border-yellow-400">
+                    <input type="checkbox" value="aged_off" class="rounded text-blue-600 border-gray-300 focus:ring-blue-500">
+                    <span class="text-gray-700">Turned 26 (aged off parent's plan)</span>
+                </label>
+                <label class="life-event flex items-center space-x-3 p-3 rounded-lg border-2 border-transparent transition hover:bg-yellow-100/50 hover:border-yellow-400">
+                    <input type="checkbox" value="income_change" class="rounded text-blue-600 border-gray-300 focus:ring-blue-500">
+                    <span class="text-gray-700">Income changed significantly</span>
+                </label>
+                <label class="life-event flex items-center space-x-3 p-3 rounded-lg border-2 border-transparent transition hover:bg-yellow-100/50 hover:border-yellow-400">
+                    <input type="checkbox" value="other" class="rounded text-blue-600 border-gray-300 focus:ring-blue-500">
+                    <span class="text-gray-700">Other qualifying event</span>
+                </label>
+            </div>
+            
+            <div id="sepQualified" class="bg-green-100 text-green-800 p-4 rounded-lg mt-6 shadow-sm hidden">
+                <strong class="font-semibold flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                    </svg>
+                    You likely qualify for Special Enrollment!
+                </strong>
+                <p class="mt-1 text-sm text-green-700">
+                    You have 60 days from your qualifying event to enroll. Let's get you covered.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Results Overlay -->
+    <div id="resultsOverlay" class="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4 transition-opacity duration-300 opacity-0 pointer-events-none overflow-y-auto">
+        <div class="bg-white rounded-xl shadow-2xl p-6 md:p-8 max-w-2xl w-full relative modal-content overflow-y-auto max-h-screen">
+            <button onclick="closeModal('resultsOverlay')" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+            
+            <div class="text-center mb-6">
+                <h2 class="text-2xl md:text-3xl font-bold text-green-600 mb-2">Great News! You Qualify for Subsidies</h2>
+                <p class="text-gray-500 text-base">Based on your information, you could save:</p>
+                <div class="text-4xl md:text-5xl font-extrabold text-blue-600 my-4">$<span id="subsidyAmount">450</span>/month</div>
+            </div>
+            
+            <div class="space-y-4 mb-6">
+                <div class="flex flex-col md:flex-row justify-between items-center bg-gray-50 rounded-lg p-4">
+                    <div>
+                        <div class="font-semibold text-lg text-gray-800">Blue Choice Bronze</div>
+                        <div class="text-sm text-gray-500">Bronze Plan • $8,700 Deductible</div>
+                    </div>
+                    <div class="md:text-right mt-2 md:mt-0">
+                        <div class="text-sm text-gray-500 line-through">$385/mo</div>
+                        <div class="text-2xl font-bold text-blue-600">$0/mo</div>
+                    </div>
+                </div>
+                <div class="flex flex-col md:flex-row justify-between items-center bg-gray-50 rounded-lg p-4">
+                    <div>
+                        <div class="font-semibold text-lg text-gray-800">Aetna Silver Value</div>
+                        <div class="text-sm text-gray-500">Silver Plan • $4,500 Deductible</div>
+                    </div>
+                    <div class="md:text-right mt-2 md:mt-0">
+                        <div class="text-sm text-gray-500 line-through">$485/mo</div>
+                        <div class="text-2xl font-bold text-blue-600">$35/mo</div>
+                    </div>
+                </div>
+                <div class="flex flex-col md:flex-row justify-between items-center bg-gray-50 rounded-lg p-4">
+                    <div>
+                        <div class="font-semibold text-lg text-gray-800">Cigna Gold Plus</div>
+                        <div class="text-sm text-gray-500">Gold Plan • $1,500 Deductible</div>
+                    </div>
+                    <div class="md:text-right mt-2 md:mt-0">
+                        <div class="text-sm text-gray-500 line-through">$585/mo</div>
+                        <div class="text-2xl font-bold text-blue-600">$135/mo</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Lead Capture Section -->
+            <div class="bg-blue-50 p-4 rounded-lg mb-6 text-center">
+                <p class="text-blue-800 font-semibold text-sm">
+                    📞 Want help choosing? Our licensed agents can explain your options and enroll you today.
+                </p>
+            </div>
+            
+            <form id="leadCaptureForm" class="space-y-4">
+                <div class="grid md:grid-cols-2 gap-4">
+                    <input type="text" class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:outline-none focus:border-blue-500 transition" placeholder="First Name" id="firstName" required>
+                    <input type="text" class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:outline-none focus:border-blue-500 transition" placeholder="Last Name" id="lastName" required>
+                    <input type="tel" class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:outline-none focus:border-blue-500 transition" placeholder="Phone Number" id="phone" required>
+                    <input type="email" class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:outline-none focus:border-blue-500 transition" placeholder="Email Address" id="email" required>
+                </div>
+                
+                <div class="flex items-start">
+                    <input type="checkbox" id="tcpaConsent" required class="rounded text-blue-600 border-gray-300 focus:ring-blue-500 mt-1">
+                    <label for="tcpaConsent" class="ml-3 text-xs text-gray-600 leading-snug">
+                        By checking this box, I expressly consent to receive calls and texts from LevelQuote and partner carriers at the number provided, including through automated systems. I understand consent is not required for purchase and I can opt out anytime. 
+                        <a href="#" class="text-blue-600 underline">Privacy Policy</a> | 
+                        <a href="#" class="text-blue-600 underline">Terms</a>
+                    </label>
+                </div>
+                
+                <!-- TrustedForm hidden field -->
+                <input type="hidden" id="xxTrustedFormCertUrl" name="xxTrustedFormCertUrl" />
+
+                <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-6 rounded-lg text-lg hover:bg-green-700 transition hover-lift">
+                    See All My Plan Options →
+                </button>
+            </form>
+        </div>
+    </div>
+
+</body>
+</html>
