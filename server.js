@@ -1,8 +1,27 @@
 const express = require('express');
 const { google } = require('googleapis');
+const path = require('path');
 
 const app = express();
 app.use(express.json());
+
+// Serve static files (HTML, CSS, JS, images)
+app.use(express.static('.'));
+
+// Route for root - redirect to ACA page
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'aca.html'));
+});
+
+// Route for ACA page
+app.get('/aca', (req, res) => {
+    res.sendFile(path.join(__dirname, 'aca.html'));
+});
+
+// Route for Final Expense page
+app.get('/fe', (req, res) => {
+    res.sendFile(path.join(__dirname, 'fe.html'));
+});
 
 // Load credentials from environment variables
 const GOOGLE_PROJECT_ID = process.env.GOOGLE_PROJECT_ID;
